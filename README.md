@@ -109,6 +109,7 @@ result.sensor_class      # 1, 2, 3 or None
 result.datasets          # slope, intercept, uncertainty and class per site and sensor
 result.between_sensor    # between-sensor-system uncertainty per site
 result.plot()            # one panel per site and sensor system
+result.target_diagram()  # Modified Target Diagram per site and sensor system
 ```
 
 The class is the worst one over all sites, sensor systems and criteria. The
@@ -149,6 +150,57 @@ prescribes for sensors. Pass your own `SensorCriteria` to change a limit.
 To report hourly performance against an equivalent method, call
 `field_uncertainty` with hourly data; hourly results do not count towards
 the class.
+
+### Modified Target Diagram
+
+![Modified Target Diagram of a sensor that reads 26 % high](docs/target_diagram.png)
+
+`result.target_diagram()`, or `aq.target_diagram(x, y, "PM2.5")` for a
+single dataset, draws the diagram of Yatkin et al. (2022). It splits the
+relative expanded uncertainty into a random part (horizontal) and a bias
+part (vertical) along the range of reference concentrations. The distance of
+a point from the centre is the relative expanded uncertainty at that
+concentration, and the circles are the class limits. A curve that sits high
+or low is dominated by bias, which a correction can remove; a curve far to
+the right is dominated by scatter, which it cannot.
+
+Two options of the paper are not implemented: residuals fitted as a function
+of concentration, and adding the between-sensor uncertainty to the random
+part.
+
+## Directive (EU) 2024/2881
+
+The new air quality directive sets its own data quality objectives and, from
+2030, lower limit values. They are available as ready-made criteria:
+
+```python
+aq.evaluate_pm(data, ["ref_1", "ref_2"], "cand", criteria=aq.PM10_2030)
+aq.evaluate_sensor(daily, "ref", ["s1", "s2", "s3"], site="site",
+                   criteria=aq.SENSOR_PM25_2030)
+```
+
+| | PM10 | PM2.5 |
+|---|---|---|
+| 24-hour limit value from 2030 | 45 µg/m³ | 25 µg/m³ |
+| Fixed measurements: maximum uncertainty | 11.3 µg/m³ or 25 % | 6.3 µg/m³ or 25 % |
+| Indicative measurements: maximum uncertainty | 22.5 µg/m³ or 50 % | 8.8 µg/m³ or 35 % |
+| Objective estimation: ratio to indicative, capped at 85 % | 2.2 | 2.5 |
+
+Where the directive gives an absolute and a relative value, the higher one
+applies. The values are from Annex I and Annex V of the directive.
+
+These criteria are an interpretation, not an official procedure. Neither the
+2010 Guide nor CEN/TS 17660-2 has been revised for the new directive:
+
+- `PM10_2030` and `PM25_2030` evaluate the uncertainty at the 2030 limit
+  value against the objective for fixed measurements. The concentration
+  split and the threshold for the dataset remain those of the 2010 Guide.
+- `SENSOR_PM10_2030` and `SENSOR_PM25_2030` set Class 1 to the objective for
+  indicative measurements, Class 2 to the one for objective estimation
+  (38.25 and 21.25 µg/m³), and Class 3 to 200 % of the limit value as in the
+  specification. Slope, intercept and the other requirements are unchanged.
+  The directive has no 24-hour assessment thresholds for PM, so the
+  uncertainty is reported at the limit value only.
 
 ## Validation
 
@@ -192,7 +244,8 @@ Two things to know when comparing with the Guide:
 ```bash
 uv sync
 uv run pytest
-uv run python examples/guide_example.py   # regenerates docs/example.png
+uv run python examples/guide_example.py    # regenerates docs/example.png
+uv run python examples/sensor_example.py   # regenerates docs/target_diagram.png
 ```
 
 ## References
@@ -202,6 +255,12 @@ uv run python examples/guide_example.py   # regenerates docs/example.png
   January 2010.
 - CEN/TS 17660-2:2024. *Air quality – Performance evaluation of air quality
   sensor systems – Part 2: Particulate matter in ambient air.*
+- Directive (EU) 2024/2881 of the European Parliament and of the Council of
+  23 October 2024 on ambient air quality and cleaner air for Europe.
+- Yatkin, S., Gerboles, M., Borowiak, A., et al. (2022). Modified Target
+  Diagram to check compliance of low-cost sensors with the Data Quality
+  Objectives of the European air quality directive. *Atmospheric
+  Environment*, 273, 118967. https://doi.org/10.1016/j.atmosenv.2022.118967
 
 ## Licence
 

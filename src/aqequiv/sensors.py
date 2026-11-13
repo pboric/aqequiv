@@ -24,8 +24,8 @@ class SensorCriteria:
 
     pollutant: str
     limit_value: float
-    upper_assessment_threshold: float
-    lower_assessment_threshold: float
+    upper_assessment_threshold: float | None
+    lower_assessment_threshold: float | None
     dqo: tuple[float, float, float]  # maximum expanded uncertainty at the limit value, µg/m³
     ubs_max: tuple[float, float, float] = (3.0, 5.0, 7.0)
     slope_range: tuple[tuple[float, float], ...] = ((0.78, 1.29), (0.60, 1.67), (0.43, 2.33))
@@ -39,6 +39,16 @@ class SensorCriteria:
 
 SENSOR_PM10 = SensorCriteria("PM10", 50.0, 35.0, 25.0, dqo=(25.0, 50.0, 100.0))
 SENSOR_PM25 = SensorCriteria("PM2.5", 30.0, 21.0, 15.0, dqo=(15.0, 30.0, 60.0))
+
+#: Class limits re-derived from Directive (EU) 2024/2881 (Annex V, Table 2)
+#: at the 24-hour limit values that apply from 2030. This mapping is not part
+#: of CEN/TS 17660-2, which refers to Directive 2008/50/EC:
+#: Class 1 = maximum uncertainty of indicative measurements;
+#: Class 2 = objective estimation (indicative x maximum ratio, capped at 85 %
+#: of the limit value); Class 3 = 200 % of the limit value, as in the
+#: specification. The directive sets no 24-hour assessment thresholds for PM.
+SENSOR_PM10_2030 = SensorCriteria("PM10", 45.0, None, None, dqo=(22.5, 38.25, 90.0))
+SENSOR_PM25_2030 = SensorCriteria("PM2.5", 25.0, None, None, dqo=(8.8, 21.25, 50.0))
 
 _CRITERIA = {"PM10": SENSOR_PM10, "PM2.5": SENSOR_PM25, "PM25": SENSOR_PM25}
 
@@ -188,6 +198,19 @@ class FieldUncertainty:
         ua, ub = self.u_correction_terms
         return 2.0 * math.sqrt(self.random_term**2 + self.bias(level) ** 2 + ua**2 + (level * ub) ** 2)
 
+    def relative_components(self, level):
+        """Relative random and bias parts of the expanded uncertainty at ``level``.
+
+        Returns ``(RR, RB)`` as fractions of ``level``; ``level`` may be an
+        array. Their quadratic sum is the relative expanded uncertainty.
+        These are the two axes of the Modified Target Diagram.
+        """
+        level = np.asarray(level, dtype=float)
+        ua, ub = self.u_correction_terms
+        rr = 2.0 * np.sqrt(self.random_term**2 + ua**2 + (level * ub) ** 2) / level
+        rb = 2.0 * (self.fit.intercept + (self.fit.slope - 1.0) * level) / level
+        return rr, rb
+
 
 def field_uncertainty(x, y, *, u_ref: float = DEFAULT_REFERENCE_UBS, u_correction_terms=(0.0, 0.0)) -> FieldUncertainty:
     """Uncertainty of sensor results ``y`` against reference results ``x``.
@@ -267,7 +290,9 @@ class SensorClassification:
         cor = f"corrected, {self.correction}" if self.correction else "uncorrected"
         lines = [
             f"{c.pollutant} sensor system classification ({cor})",
-            f"Limit value {c.limit_value:g} µg/m³; reference between-sampler uncertainty {self.u_ref:.2f} µg/m³",
+            f"Limit value {c.limit_value:g} µg/m³; maximum expanded uncertainty "
+            f"{' / '.join(f'{d:g}' for d in c.dqo)} µg/m³ for Class 1 / 2 / 3",
+            f"Reference between-sampler uncertainty {self.u_ref:.2f} µg/m³",
             "",
             "Field test, per site and sensor system (U = expanded uncertainty, µg/m³)",
             _format(self.datasets),
@@ -296,6 +321,12 @@ class SensorClassification:
         from .plotting import plot_sensor
 
         return plot_sensor(self)
+
+    def target_diagram(self):
+        """Modified Target Diagram for every site and sensor system."""
+        from .plotting import plot_target_grid
+
+        return plot_target_grid(self)
 
 
 def evaluate_sensor(
@@ -392,8 +423,14 @@ def evaluate_sensor(
                 "site": name, "sensor": col, "n": fu.fit.n, "capture_pct": 100 * capture,
                 "slope": fu.fit.slope, "intercept": fu.fit.intercept, "r2": fu.fit.r2,
                 "U_LV": u_lv,
-                "U_UAT": fu.expanded(crit.upper_assessment_threshold),
-                "U_LAT": fu.expanded(crit.lower_assessment_threshold),
+                **{
+                    name_: fu.expanded(level)
+                    for name_, level in (
+                        ("U_UAT", crit.upper_assessment_threshold),
+                        ("U_LAT", crit.lower_assessment_threshold),
+                    )
+                    if level is not None
+                },
                 "limited_by": ", ".join(k for k, r in ranks.items() if r == worst) if worst > 1 else "",
                 "class": worst,
             })

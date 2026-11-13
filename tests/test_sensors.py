@@ -170,3 +170,31 @@ def test_sensor_plot():
     matplotlib.use("Agg")
     fig = aq.evaluate_sensor(field_test(), "ref", SENSORS, site="site").plot()
     assert len(fig.axes) == 6
+
+
+def test_target_diagram_components():
+    rng = np.random.default_rng(7)
+    x = rng.uniform(5, 70, 120)
+    y = 2.0 + 1.2 * x + rng.normal(0, 3, 120)
+    fu = aq.field_uncertainty(x, y, u_ref=0.67, u_correction_terms=(0.3, 0.01))
+    levels = np.array([10.0, 30.0, 60.0])
+    rr, rb = fu.relative_components(levels)
+    for level, r, b in zip(levels, rr, rb):
+        # the distance from the origin is the relative expanded uncertainty
+        assert math.hypot(r, b) == pytest.approx(fu.expanded(level) / level)
+        assert b == pytest.approx(2 * fu.bias(level) / level)
+    # the bias tends to the slope contribution at high concentrations
+    assert fu.relative_components(1e9)[1] == pytest.approx(2 * (fu.fit.slope - 1), abs=1e-6)
+
+
+def test_target_diagram_plots():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    data = field_test(slope=1.26)
+    fig = aq.target_diagram(data["ref"], data["s0"], "PM2.5")
+    assert fig.axes[0].get_xlabel().startswith("Relative random")
+    grid = aq.evaluate_sensor(data, "ref", SENSORS, site="site").target_diagram()
+    assert len(grid.axes) == 7  # six panels and the colour bar
+    new = aq.evaluate_sensor(data, "ref", SENSORS, site="site", criteria=aq.SENSOR_PM25_2030).target_diagram()
+    assert len(new.axes) == 7

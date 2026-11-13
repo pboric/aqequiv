@@ -9,7 +9,9 @@
 from .datasets import EXAMPLES, load_example
 from .pm import (
     PM10,
+    PM10_2030,
     PM25,
+    PM25_2030,
     Calibration,
     Comparability,
     PMCriteria,
@@ -18,10 +20,13 @@ from .pm import (
     comparability,
     evaluate_pm,
 )
+from .plotting import target_diagram
 from .regression import LinearFit, OrthogonalFit, ols_regression, orthogonal_regression
 from .sensors import (
     SENSOR_PM10,
+    SENSOR_PM10_2030,
     SENSOR_PM25,
+    SENSOR_PM25_2030,
     CoarseTest,
     Correction,
     FieldUncertainty,
@@ -37,14 +42,18 @@ from .sensors import (
     rh_factor,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "EXAMPLES",
     "PM10",
+    "PM10_2030",
     "PM25",
+    "PM25_2030",
     "SENSOR_PM10",
+    "SENSOR_PM10_2030",
     "SENSOR_PM25",
+    "SENSOR_PM25_2030",
     "Calibration",
     "CoarseTest",
     "Comparability",
@@ -70,4 +79,5 @@ __all__ = [
     "ols_regression",
     "orthogonal_regression",
     "rh_factor",
+    "target_diagram",
 ]

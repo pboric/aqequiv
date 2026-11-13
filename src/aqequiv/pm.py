@@ -25,15 +25,28 @@ class PMCriteria:
     split: float  # boundary between the low and high concentration subsets
     upper_assessment_threshold: float
     dqo: float = 0.25  # data quality objective for the expanded uncertainty
+    dqo_absolute: float | None = None  # µg/m³; if set, the higher of the two applies
     ubs_candidate_max: float = 2.5
     ubs_reference_max: float = 2.0
     min_pairs: int = 40
     min_fraction_above_uat: float = 0.20
     min_comparisons: int = 4
 
+    @property
+    def max_uncertainty(self) -> float:
+        """Largest acceptable expanded uncertainty at the limit value, µg/m³."""
+        return max(self.dqo * self.limit_value, self.dqo_absolute or 0.0)
+
 
 PM10 = PMCriteria("PM10", limit_value=50.0, split=30.0, upper_assessment_threshold=28.0)
 PM25 = PMCriteria("PM2.5", limit_value=30.0, split=18.0, upper_assessment_threshold=17.0)
+
+#: Objectives for fixed measurements of 24-hour means in Directive (EU)
+#: 2024/2881 (Annex V, Table 2), evaluated at the limit values that apply
+#: from 2030. The Guide has not been revised for the new directive, so its
+#: concentration split and threshold for the dataset are kept.
+PM10_2030 = PMCriteria("PM10", 45.0, split=30.0, upper_assessment_threshold=28.0, dqo_absolute=11.3)
+PM25_2030 = PMCriteria("PM2.5", 25.0, split=18.0, upper_assessment_threshold=17.0, dqo_absolute=6.3)
 
 _CRITERIA = {"PM10": PM10, "PM2.5": PM25, "PM25": PM25}
 _CALIBRATIONS = ("none", "auto", "intercept", "slope", "both")
@@ -62,6 +75,7 @@ class Comparability:
     u_calibration: float  # extra term carried over from a calibration
     u_combined: float
     dqo: float
+    dqo_absolute: float | None = None
 
     @property
     def w_expanded(self) -> float:
@@ -70,7 +84,8 @@ class Comparability:
 
     @property
     def passed(self) -> bool:
-        return self.w_expanded <= self.dqo
+        limit = max(self.dqo * self.limit_value, self.dqo_absolute or 0.0)
+        return 2.0 * self.u_combined <= limit
 
 
 def comparability(
@@ -80,12 +95,15 @@ def comparability(
     limit_value: float,
     u_ref: float,
     dqo: float = 0.25,
+    dqo_absolute: float | None = None,
     u_calibration: float = 0.0,
 ) -> Comparability:
     """Uncertainty of candidate results ``y`` against reference results ``x``.
 
     Implements eq. 9.6-9.9. ``u_ref`` is the standard uncertainty of the
-    reference results. ``u_calibration`` is the extra term of eq. 9.12, 9.15
+    reference results. The result passes if the expanded uncertainty is at
+    most ``dqo`` times the limit value or ``dqo_absolute`` (µg/m³), whichever
+    is higher. ``u_calibration`` is the extra term of eq. 9.12, 9.15
     or 9.17 when ``y`` has already been calibrated.
     """
     fit = orthogonal_regression(x, y)
@@ -108,6 +126,7 @@ def comparability(
         u_calibration=u_calibration,
         u_combined=u_combined,
         dqo=dqo,
+        dqo_absolute=dqo_absolute,
     )
 
 
@@ -177,8 +196,9 @@ class PMEquivalence:
         cal = f"calibrated, {self.calibration}" if self.calibration else "uncalibrated"
         lines = [
             f"{c.pollutant} equivalence test ({cal})",
-            f"Uncertainty evaluated at {c.limit_value:g} µg/m³; "
-            f"reference uncertainty {self.u_ref:.2f} µg/m³ ({self.u_ref_source})",
+            f"Uncertainty evaluated at {c.limit_value:g} µg/m³; objective: expanded uncertainty "
+            f"<= {c.max_uncertainty:g} µg/m³ ({100 * c.max_uncertainty / c.limit_value:.1f} %)",
+            f"Reference uncertainty {self.u_ref:.2f} µg/m³ ({self.u_ref_source})",
             "",
             "Comparison with the reference method",
             _format(self.comparisons),
@@ -344,7 +364,8 @@ def evaluate_pm(
                 continue
             comp = comparability(
                 x[sel], cands.loc[sel, col],
-                limit_value=crit.limit_value, u_ref=u_ref, dqo=crit.dqo, u_calibration=u_cal,
+                limit_value=crit.limit_value, u_ref=u_ref, dqo=crit.dqo,
+                dqo_absolute=crit.dqo_absolute, u_calibration=u_cal,
             )
             f = comp.fit
             rows.append({
