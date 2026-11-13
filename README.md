@@ -236,6 +236,37 @@ Two options of the paper are not implemented: residuals fitted as a function
 of concentration, and adding the between-sensor uncertainty to the random
 part.
 
+## Command line and HTML report
+
+Installing the package also installs the `aqequiv` command, so the
+evaluations can be run on a CSV file without writing Python:
+
+```console
+$ aqequiv pm parallel.csv --reference ref_1 ref_2 --candidate cand \
+      --pollutant PM10 --site site --calibration auto --html report.html
+$ aqequiv sensor daily.csv --reference ref --sensors s1 s2 s3 \
+      --pollutant PM2.5 --site site --rh-factor 1.3 --html report.html
+$ aqequiv ongoing parallel.csv --reference rm --candidate ams \
+      --site site --period year --network-sites 30
+$ aqequiv example pm25_locA_cm1 -o example.csv    # a dataset to try it on
+```
+
+Each command prints the text report. The options mirror the arguments of
+the Python functions; `aqequiv pm --help` lists them. In addition:
+
+- `--html FILE` writes the report as one self-contained HTML page with the
+  verdict, all tables and the figures. It needs no internet connection and
+  prints well. From Python: `result.to_html("report.html")`.
+- `--plot FILE` saves the scatter plot, and `--target-diagram FILE` the
+  Modified Target Diagram of a sensor test.
+- `--objectives 2030` uses the objectives of Directive (EU) 2024/2881.
+- `--check` makes the exit status 1 when the criteria are not met (for
+  sensors: when the class is worse than `--required-class`), so the command
+  can be used in scripts. Status 2 means the input could not be evaluated.
+- The column separator and the decimal mark are detected, so files exported
+  with `;` and a decimal comma work as they are. `--sep` and `--decimal`
+  override the detection.
+
 ## Directive (EU) 2024/2881
 
 The new air quality directive sets its own data quality objectives and, from

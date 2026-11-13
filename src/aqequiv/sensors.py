@@ -351,6 +351,12 @@ class SensorClassification:
     def __str__(self) -> str:
         return self.report()
 
+    def to_html(self, path=None, **kwargs) -> str:
+        """Self-contained HTML report; written to ``path`` if given."""
+        from .report import to_html
+
+        return to_html(self, path, **kwargs)
+
     def plot(self):
         """Scatter plots of every sensor system against the reference, per site."""
         from .plotting import plot_sensor

@@ -1,6 +1,6 @@
 [project]
 name = "aqequiv"
-version = "0.4.0"
+version = "0.5.0"
 description = "Equivalence testing and sensor classification for ambient air quality measurements"
 readme = "README.md"
 authors = [
@@ -19,6 +19,9 @@ dependencies = [
     "pandas>=2.0",
     "matplotlib>=3.7",
 ]
+
+[project.scripts]
+aqequiv = "aqequiv.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]

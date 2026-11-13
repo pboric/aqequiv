@@ -26,6 +26,7 @@ from .pm import (
     verify_ongoing,
 )
 from .plotting import target_diagram
+from .report import to_html
 from .regression import LinearFit, OrthogonalFit, ols_regression, orthogonal_regression
 from .sensors import (
     SENSOR_BENZENE,
@@ -53,7 +54,7 @@ from .sensors import (
     rh_factor,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "EXAMPLES",
@@ -99,5 +100,6 @@ __all__ = [
     "orthogonal_regression",
     "rh_factor",
     "target_diagram",
+    "to_html",
     "verify_ongoing",
 ]

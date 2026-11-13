@@ -231,6 +231,12 @@ class PMEquivalence:
     def __str__(self) -> str:
         return self.report()
 
+    def to_html(self, path=None, **kwargs) -> str:
+        """Self-contained HTML report; written to ``path`` if given."""
+        from .report import to_html
+
+        return to_html(self, path, **kwargs)
+
     def plot(self, **kwargs):
         """Scatter plot of each candidate against the reference."""
         from .plotting import plot_equivalence
@@ -533,6 +539,12 @@ class OngoingVerification:
 
     def __str__(self) -> str:
         return self.report()
+
+    def to_html(self, path=None, **kwargs) -> str:
+        """Self-contained HTML report; written to ``path`` if given."""
+        from .report import to_html
+
+        return to_html(self, path, **kwargs)
 
 
 def verify_ongoing(
