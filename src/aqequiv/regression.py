@@ -1,4 +1,4 @@
-"""Orthogonal regression as defined in Annex B of the 2010 Guide."""
+"""Linear regressions: orthogonal (2010 Guide, Annex B) and ordinary least squares."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import numpy as np
 
 
 @dataclass(frozen=True)
-class OrthogonalFit:
-    """Result of an orthogonal regression ``y = intercept + slope * x``."""
+class LinearFit:
+    """Result of a regression ``y = intercept + slope * x``."""
 
     slope: float
     intercept: float
@@ -43,7 +43,7 @@ def paired(x, y) -> tuple[np.ndarray, np.ndarray]:
     return x[keep], y[keep]
 
 
-def orthogonal_regression(x, y, *, through_origin: bool = False) -> OrthogonalFit:
+def orthogonal_regression(x, y, *, through_origin: bool = False) -> LinearFit:
     """Fit ``y = a + b*x`` treating both variables symmetrically.
 
     Implements equations B.1-B.9 of the Guide, or B.10-B.14 when
@@ -75,7 +75,7 @@ def orthogonal_regression(x, y, *, through_origin: bool = False) -> OrthogonalFi
     rss = np.sum((y - intercept - slope * x) ** 2)
     r2 = np.corrcoef(x, y)[0, 1] ** 2
 
-    return OrthogonalFit(
+    return LinearFit(
         slope=float(slope),
         intercept=float(intercept),
         u_slope=float(u_slope),
@@ -83,4 +83,37 @@ def orthogonal_regression(x, y, *, through_origin: bool = False) -> OrthogonalFi
         n=int(n),
         rss=float(rss),
         r2=float(r2),
+    )
+
+
+#: Kept for backwards compatibility with version 0.1.
+OrthogonalFit = LinearFit
+
+
+def ols_regression(x, y) -> LinearFit:
+    """Ordinary least squares fit of ``y = a + b*x`` with the uncertainties of a and b.
+
+    Pairs with a missing value are ignored.
+    """
+    x, y = paired(x, y)
+    n = x.size
+    if n < 3:
+        raise ValueError(f"regression needs at least 3 pairs, got {n}")
+    xm, ym = x.mean(), y.mean()
+    sxx = np.sum((x - xm) ** 2)
+    if sxx == 0:
+        raise ValueError("x has no spread")
+    slope = np.sum((x - xm) * (y - ym)) / sxx
+    intercept = ym - slope * xm
+    rss = np.sum((y - intercept - slope * x) ** 2)
+    s2 = rss / (n - 2)
+    sst = np.sum((y - ym) ** 2)
+    return LinearFit(
+        slope=float(slope),
+        intercept=float(intercept),
+        u_slope=float(np.sqrt(s2 / sxx)),
+        u_intercept=float(np.sqrt(s2 * np.sum(x**2) / (n * sxx))),
+        n=int(n),
+        rss=float(rss),
+        r2=float(1 - rss / sst) if sst > 0 else float("nan"),
     )

@@ -1,7 +1,7 @@
 [project]
 name = "aqequiv"
-version = "0.1.0"
-description = "Equivalence testing of ambient air monitoring methods (EU Guide to the Demonstration of Equivalence)"
+version = "0.2.0"
+description = "Equivalence testing and sensor classification for ambient particulate matter measurements"
 readme = "README.md"
 authors = [
     { name = "Petar Krešimir Borić", email = "112004618+pboric@users.noreply.github.com" }
@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["air quality", "particulate matter", "equivalence", "measurement uncertainty", "orthogonal regression"]
+keywords = ["air quality", "particulate matter", "equivalence", "low-cost sensors", "measurement uncertainty", "orthogonal regression"]
 classifiers = [
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Atmospheric Science",
