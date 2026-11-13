@@ -1,9 +1,9 @@
 # aqequiv
 
-Equivalence testing and sensor classification for ambient particulate
-matter measurements, in Python.
+Equivalence testing and sensor classification for ambient air quality
+measurements, in Python.
 
-`aqequiv` does two related jobs:
+`aqequiv` does three related jobs:
 
 - **Equivalence of a candidate method** (`evaluate_pm`): the particulate
   matter procedure of the European Commission's *Guide to the Demonstration
@@ -11,11 +11,15 @@ matter measurements, in Python.
   you whether an automatic analyser meets the 25 % data quality objective
   against the reference method.
 - **Classification of sensor systems** (`evaluate_sensor`): the field-test
-  evaluation of CEN/TS 17660-2:2024. It tells you whether a low-cost PM
-  sensor system reaches Class 1 (indicative measurements), Class 2
-  (objective estimation) or Class 3 (non-regulatory use).
+  evaluation of CEN/TS 17660-2:2024 for PM and of CEN/TS 17660-1:2021 for
+  gases. It tells you whether a low-cost sensor system reaches Class 1
+  (indicative measurements), Class 2 (objective estimation) or Class 3
+  (non-regulatory use).
+- **Ongoing verification** (`verify_ongoing`): the yearly check of
+  EN 16450:2017 that an equivalent PM instrument still meets the objective,
+  and how many sites need comparisons next year.
 
-Both calculations are usually done in a spreadsheet. This package makes
+These calculations are usually done in a spreadsheet. This package makes
 them scriptable, testable and repeatable.
 
 ![Example: a candidate before and after slope calibration](docs/example.png)
@@ -91,6 +95,42 @@ These are the values of the 2010 Guide. Pass your own `PMCriteria` to
 The building blocks are available on their own: `orthogonal_regression`,
 `between_sampler_uncertainty` and `comparability`.
 
+### EN 16450
+
+EN 16450:2017 uses the same field-test evaluation as the Guide with three
+differences, switched on with `standard="en16450"`:
+
+- a single reference sampler is given an uncertainty of 0.67 µg/m³ (the
+  Guide's default is a variance of 0.67, so an uncertainty of 0.82 µg/m³);
+- with `calibration="auto"`, no calibration is made for a slope between
+  0.98 and 1.02 or an intercept within ±1 µg/m³, even if significant;
+- 32 reference results above the threshold are enough when they make up
+  less than 20 % of the dataset.
+
+### Ongoing verification
+
+```python
+check = aq.verify_ongoing(
+    parallel,                      # parallel measurements of the last 3 years
+    reference="rm", candidate="ams", pollutant="PM10",
+    site="site", period="year",
+    applied_calibration="slope",   # if the instrument is slope-corrected in routine use
+    n_network_sites=30,            # sites operating this instrument type
+)
+print(check)
+check.w_pct             # expanded uncertainty of the full dataset, %
+check.sites_required    # sites to compare next year; None if action is needed
+check.action_required   # True if the uncertainty is above the objective
+check.pairs             # valid pairs per site and year (at least 80 required)
+```
+
+| Expanded uncertainty | ≤ 10 % | ≤ 15 % | ≤ 20 % | ≤ 25 % |
+|---|---|---|---|---|
+| Share of sites | 10 % | 10 % | 15 % | 20 % |
+| Number of sites | 2 | 3 | 4 | 5 |
+
+The smaller of the two applies, with a minimum of two sites.
+
 ## Classification of a sensor system
 
 ```python
@@ -151,6 +191,34 @@ To report hourly performance against an equivalent method, call
 `field_uncertainty` with hourly data; hourly results do not count towards
 the class.
 
+### Gas sensors
+
+The same function classifies gas sensor systems from hourly field data:
+
+```python
+result = aq.evaluate_sensor(hourly, "ref", ["s1", "s2", "s3"], "NO2",
+                            site="site", u_ref=1.2)
+```
+
+| | NO2 | NO | O3 | SO2 | CO (mg/m³) | Benzene |
+|---|---|---|---|---|---|---|
+| Level of evaluation | 200 | 200 | 120 | 350 | 10 | 5 |
+| Class 1 / 2 / 3 uncertainty | 50 / 150 / 400 | 50 / 150 / 400 | 36 / 90 / 240 | 88 / 263 / 700 | 2.5 / 7.5 / 20 | 1.5 / 5 / 10 |
+| Between-sensor uncertainty | 7.6 / 15 / 31 | 5 / 10 / 20 | 8 / 12 / 24 | 10.6 / 21 / 43 | 0.058 / 0.116 / 0.232 | 1.3 / 2.6 / 5.2 |
+| Intercept (±) | 9.8 / 19 / 33 | 6.4 / 12 / 22 | 9.8 / 19 / 33 | 1.4 / 2.5 / 4.5 | 0.18 / 0.25 / 0.40 | 0.28 / 0.58 / 0.60 |
+
+Values are in µg/m³ unless noted. Slope and data-capture requirements are
+the same as for PM, and there is no humidity or coarse-fraction test.
+
+- `u_ref`, the between-instrument uncertainty of the reference analyser, has
+  no default: take it from the analyser's type-approval report, in the unit
+  of your data.
+- Only the field test is evaluated. The specification also requires a
+  pre-test (response time, lack of fit, repeatability) and, depending on the
+  route, laboratory tests; the final class is the lowest of all of them.
+- The check for interferents that correlate with the pollutant at the test
+  site is left to you.
+
 ### Modified Target Diagram
 
 ![Modified Target Diagram of a sensor that reads 26 % high](docs/target_diagram.png)
@@ -206,7 +274,13 @@ These criteria are an interpretation, not an official procedure. Neither the
 
 **Sensor classification.** CEN/TS 17660-2 contains no worked numerical
 example, so the tests check each formula against an independent calculation
-and the classification logic against constructed cases.
+and the classification logic against constructed cases. CEN/TS 17660-1
+prints summary statistics of an NO2 example (Annex K) but not its data; the
+tests reproduce its uncertainties at four concentration levels from the
+printed regression results, to within the rounding of the printed slope.
+
+**EN 16450.** The standard has no worked example; its rules are tested on
+constructed cases.
 
 **Equivalence.** The test suite reproduces the five worked examples in Annex F of the Guide
 (PM2.5 and PM10, before and after calibration) to the precision the Guide
@@ -225,7 +299,9 @@ Two things to know when comparing with the Guide:
 
 ## Limitations
 
-- Particulate matter only. Gas sensors (CEN/TS 17660-1) are not covered.
+- Field data only. The laboratory parts of the documents are not covered:
+  type testing in EN 16450, and the pre-test and laboratory tests for gas
+  sensors in CEN/TS 17660-1.
 - `evaluate_sensor` covers the calculations, not the test design. It does
   not check site types, seasons, climate, or that enough high-concentration
   days were sampled; the visual check for linearity and for PM10 being
@@ -253,6 +329,10 @@ uv run python examples/sensor_example.py   # regenerates docs/target_diagram.png
 - EC Working Group on Guidance for the Demonstration of Equivalence. *Guide
   to the Demonstration of Equivalence of Ambient Air Monitoring Methods.*
   January 2010.
+- EN 16450:2017. *Ambient air – Automated measuring systems for the
+  measurement of the concentration of particulate matter (PM10; PM2,5).*
+- CEN/TS 17660-1:2021. *Air quality – Performance evaluation of air quality
+  sensor systems – Part 1: Gaseous pollutants in ambient air.*
 - CEN/TS 17660-2:2024. *Air quality – Performance evaluation of air quality
   sensor systems – Part 2: Particulate matter in ambient air.*
 - Directive (EU) 2024/2881 of the European Parliament and of the Council of

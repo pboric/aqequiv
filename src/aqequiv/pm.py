@@ -1,4 +1,9 @@
-"""Equivalence test for particulate matter (Guide 2010, clauses 9.5-9.7)."""
+"""Equivalence test for particulate matter.
+
+Implements the field-test evaluation of the 2010 Guide (clauses 9.5-9.7),
+the variations of EN 16450:2017 (clause 7.5.8) and its ongoing verification
+of suitability (clause 8.6).
+"""
 
 from __future__ import annotations
 
@@ -50,6 +55,14 @@ PM25_2030 = PMCriteria("PM2.5", 25.0, split=18.0, upper_assessment_threshold=17.
 
 _CRITERIA = {"PM10": PM10, "PM2.5": PM25, "PM25": PM25}
 _CALIBRATIONS = ("none", "auto", "intercept", "slope", "both")
+_STANDARDS = ("guide", "en16450")
+
+#: EN 16450: reference uncertainty when it cannot be derived from the data,
+#: µg/m³, and the range in which slope and intercept need no calibration.
+EN16450_REFERENCE_UNCERTAINTY = 0.67
+EN16450_SLOPE_TOLERANCE = (0.980, 1.020)
+EN16450_INTERCEPT_TOLERANCE = 1.0
+EN16450_MIN_HIGH_RESULTS = 32
 
 
 def between_sampler_uncertainty(y1, y2) -> float:
@@ -242,6 +255,8 @@ def evaluate_pm(
     site: str | None = None,
     u_ref: float | None = None,
     calibration: str = "none",
+    standard: str = "guide",
+    applied_calibration: str = "none",
     criteria: PMCriteria | None = None,
 ) -> PMEquivalence:
     """Test a candidate PM method for equivalence with the reference method.
@@ -271,6 +286,17 @@ def evaluate_pm(
         and ``"both"`` first calibrate the candidate with the regression of
         the full dataset. ``"auto"`` picks whichever of those the
         significance of slope and intercept calls for.
+    standard
+        ``"guide"`` follows the 2010 Guide. ``"en16450"`` follows EN 16450:
+        a single reference sampler gets an uncertainty of 0.67 µg/m³ instead
+        of √0.67; automatic calibration is skipped for a slope within
+        0.98-1.02 or an intercept within ±1 µg/m³; and 32 reference results
+        above the threshold are enough when they are less than 20 %.
+    applied_calibration
+        ``"intercept"``, ``"slope"`` or ``"both"`` if ``data`` already holds
+        results calibrated in routine operation. The uncertainty of the
+        intercept and/or slope found here is then added, as EN 16450
+        prescribes for ongoing verification.
     criteria
         Override the limits prescribed for the pollutant.
     """
@@ -281,6 +307,12 @@ def evaluate_pm(
             raise ValueError(f"unknown pollutant {pollutant!r}; use 'PM10' or 'PM2.5'") from None
     if calibration not in _CALIBRATIONS:
         raise ValueError(f"calibration must be one of {_CALIBRATIONS}")
+    if standard not in _STANDARDS:
+        raise ValueError(f"standard must be one of {_STANDARDS}")
+    if applied_calibration not in ("none", "intercept", "slope", "both"):
+        raise ValueError("applied_calibration must be 'none', 'intercept', 'slope' or 'both'")
+    if applied_calibration != "none" and calibration != "none":
+        raise ValueError("give either calibration or applied_calibration, not both")
     ref_cols, cand_cols = _as_list(reference), _as_list(candidate)
     if not 1 <= len(ref_cols) <= 2 or not 1 <= len(cand_cols) <= 2:
         raise ValueError("give one or two reference columns and one or two candidate columns")
@@ -321,6 +353,8 @@ def evaluate_pm(
         u_ref_source = "given"
     elif ubs_ref is not None:
         u_ref, u_ref_source = ubs_ref / math.sqrt(2), "reference u_bs / √2"
+    elif standard == "en16450":
+        u_ref, u_ref_source = EN16450_REFERENCE_UNCERTAINTY, "EN 16450 default"
     else:
         u_ref, u_ref_source = math.sqrt(DEFAULT_REFERENCE_VARIANCE), "Guide default"
 
@@ -330,14 +364,23 @@ def evaluate_pm(
         fit = orthogonal_regression(np.tile(x.to_numpy(), len(cand_cols)), cands.to_numpy().T.ravel())
         kind = calibration
         if kind == "auto":
+            slope_sig, intercept_sig = fit.slope_significant, fit.intercept_significant
+            if standard == "en16450":
+                lo, hi = EN16450_SLOPE_TOLERANCE
+                if slope_sig and lo <= fit.slope <= hi:
+                    slope_sig = False
+                    notes.append(f"slope {fit.slope:.3f} is within {lo}-{hi}: no slope calibration needed")
+                if intercept_sig and abs(fit.intercept) <= EN16450_INTERCEPT_TOLERANCE:
+                    intercept_sig = False
+                    notes.append(f"intercept {fit.intercept:.2f} is within ±1 µg/m³: no intercept calibration needed")
             kind = {
                 (True, True): "both",
                 (True, False): "slope",
                 (False, True): "intercept",
                 (False, False): "none",
-            }[(fit.slope_significant, fit.intercept_significant)]
+            }[(slope_sig, intercept_sig)]
             if kind == "none":
-                notes.append("slope and intercept are not significant: no calibration applied")
+                notes.append("no calibration applied")
         if kind != "none":
             cal = Calibration(kind, fit.slope, fit.intercept, fit.u_slope, fit.u_intercept)
             cands = cal.apply(cands)
@@ -368,6 +411,16 @@ def evaluate_pm(
                 dqo_absolute=crit.dqo_absolute, u_calibration=u_cal,
             )
             f = comp.fit
+            if applied_calibration != "none":
+                extra = math.hypot(
+                    f.u_intercept if applied_calibration in ("intercept", "both") else 0.0,
+                    crit.limit_value * f.u_slope if applied_calibration in ("slope", "both") else 0.0,
+                )
+                comp = comparability(
+                    x[sel], cands.loc[sel, col],
+                    limit_value=crit.limit_value, u_ref=u_ref, dqo=crit.dqo,
+                    dqo_absolute=crit.dqo_absolute, u_calibration=extra,
+                )
             rows.append({
                 "candidate": col, "dataset": label, "n": f.n,
                 "slope": f.slope, "u_slope": f.u_slope,
@@ -387,11 +440,15 @@ def evaluate_pm(
     comparisons = pd.DataFrame(rows)
 
     # --- suitability of the dataset (clause 9.5.2 and 9.4.2) ---------------
-    frac = float((x.dropna() > crit.upper_assessment_threshold).mean())
+    above = x.dropna() > crit.upper_assessment_threshold
+    frac, n_above = float(above.mean()), int(above.sum())
+    enough, required = frac >= crit.min_fraction_above_uat, f">= {100 * crit.min_fraction_above_uat:g}%"
+    if standard == "en16450":
+        enough = enough or n_above >= EN16450_MIN_HIGH_RESULTS
+        required += f" or >= {EN16450_MIN_HIGH_RESULTS} results"
     checks = [(
         f"share of reference results > {crit.upper_assessment_threshold:g}",
-        f"{100 * frac:.1f}%", f">= {100 * crit.min_fraction_above_uat:g}%",
-        frac >= crit.min_fraction_above_uat,
+        f"{100 * frac:.1f}% ({n_above} results)", required, enough,
     )]
     if sites is not None:
         n_sites = int(sites.nunique())
@@ -421,3 +478,101 @@ def evaluate_pm(
         notes=notes,
         _points=points,
     )
+
+
+# --- ongoing verification of suitability (EN 16450, clause 8.6) --------------
+
+#: Upper bound of the expanded uncertainty (%), share of network sites (%) and
+#: number of sites to compare with the reference method in the following year.
+ONGOING_REQUIREMENTS = ((10.0, 10, 2), (15.0, 10, 3), (20.0, 15, 4), (25.0, 20, 5))
+ONGOING_MIN_PAIRS = 80
+
+
+def ongoing_sites_required(w_pct: float, n_network_sites: int | None = None) -> int | None:
+    """Sites at which next year's comparisons with the reference method are needed.
+
+    ``w_pct`` is the expanded relative uncertainty of the instrument type, in
+    percent. With the number of sites in the network given, the smaller of
+    the percentage and the fixed number applies, but never fewer than two.
+    Returns None when the uncertainty is above 25 %: corrective action is
+    needed first.
+    """
+    for upper, percent, number in ONGOING_REQUIREMENTS:
+        if w_pct <= upper:
+            if n_network_sites is None:
+                return number
+            return max(2, min(number, math.ceil(percent / 100 * n_network_sites)))
+    return None
+
+
+@dataclass
+class OngoingVerification:
+    """Outcome of :func:`verify_ongoing`."""
+
+    equivalence: PMEquivalence
+    w_pct: float  # highest expanded uncertainty of the full dataset
+    sites_required: int | None
+    pairs: pd.DataFrame  # valid pairs per site and period
+
+    @property
+    def action_required(self) -> bool:
+        """True if the uncertainty exceeds the data quality objective."""
+        return self.sites_required is None
+
+    def report(self) -> str:
+        lines = [self.equivalence.report(), "", "Ongoing verification"]
+        lines.append(f"Expanded uncertainty of the full dataset: {self.w_pct:.1f} %")
+        if self.action_required:
+            lines.append("Above the objective: corrective action is required, e.g. recalibration")
+        else:
+            lines.append(f"Sites to compare with the reference method next year: {self.sites_required}")
+        short = self.pairs[~self.pairs["passed"]]
+        if len(short):
+            lines += [f"Fewer than {ONGOING_MIN_PAIRS} valid pairs:", _format(short)]
+        return "\n".join(lines)
+
+    def __str__(self) -> str:
+        return self.report()
+
+
+def verify_ongoing(
+    data: pd.DataFrame,
+    reference,
+    candidate,
+    pollutant: str = "PM10",
+    *,
+    site: str | None = None,
+    period: str | None = None,
+    applied_calibration: str = "none",
+    n_network_sites: int | None = None,
+    u_ref: float | None = None,
+    criteria: PMCriteria | None = None,
+) -> OngoingVerification:
+    """Yearly check that an equivalent PM instrument still meets the objective.
+
+    ``data`` holds the parallel measurements of up to the last three years,
+    one row per 24-hour period, with the instrument results as reported
+    (after any calibration used in routine operation; name that calibration
+    in ``applied_calibration``). ``period`` is an optional column with the
+    year, used to check that each site has at least 80 valid pairs a year.
+    ``n_network_sites`` is the number of sites that operate this instrument
+    type.
+    """
+    result = evaluate_pm(
+        data, reference, candidate, pollutant, site=site, u_ref=u_ref,
+        standard="en16450", applied_calibration=applied_calibration, criteria=criteria,
+    )
+    full = result.comparisons[result.comparisons["dataset"] == "all"]
+    w_pct = float(full["W_pct"].max())
+    limit_pct = 100 * result.criteria.max_uncertainty / result.criteria.limit_value
+    sites_required = ongoing_sites_required(w_pct, n_network_sites) if w_pct <= limit_pct else None
+
+    x = data[_as_list(reference)].astype(float).mean(axis=1, skipna=True)
+    valid = x.notna() & data[_as_list(candidate)].astype(float).notna().all(axis=1)
+    keys = [k for k in (site, period) if k is not None]
+    if keys:
+        pairs = valid.groupby([data[k] for k in keys]).sum().rename("pairs").reset_index()
+    else:
+        pairs = pd.DataFrame({"pairs": [int(valid.sum())]})
+    pairs["passed"] = pairs["pairs"] >= ONGOING_MIN_PAIRS
+    return OngoingVerification(result, w_pct, sites_required, pairs)

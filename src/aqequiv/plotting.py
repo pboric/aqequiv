@@ -90,15 +90,15 @@ def plot_sensor(result):
                 0.04, 0.96,
                 f"y = {fit.slope:.2f}x {sign} {abs(fit.intercept):.1f}\n"
                 f"R² = {fit.r2:.2f}, n = {fit.n}\n"
-                f"U = {u_lv:.1f} µg/m³ ({label})",
+                f"U = {u_lv:.3g} {crit.unit} ({label})",
                 transform=ax.transAxes, va="top", fontsize=8,
             )
             ax.set(xlim=(0, top), ylim=(0, top), aspect="equal")
             ax.set_title(f"{site} · {sensor}", fontsize=9)
             if i == len(sites) - 1:
-                ax.set_xlabel(f"Reference {crit.pollutant} (µg/m³)")
+                ax.set_xlabel(f"Reference {crit.pollutant} ({crit.unit})")
             if j == 0:
-                ax.set_ylabel(f"Sensor{' corrected' if result.correction else ''} (µg/m³)")
+                ax.set_ylabel(f"Sensor{' corrected' if result.correction else ''} ({crit.unit})")
     return fig
 
 
@@ -153,7 +153,7 @@ def _draw_target(ax, fu, x, crit, *, colorbar=True):
 
     ax.set(xlim=(0, extent), ylim=(-extent, extent), aspect="equal")
     if colorbar:
-        ax.figure.colorbar(lc, ax=ax, shrink=0.8, pad=0.02, label="Reference concentration (µg/m³)")
+        ax.figure.colorbar(lc, ax=ax, shrink=0.8, pad=0.02, label=f"Reference concentration ({crit.unit})")
     return lc
 
 
@@ -172,7 +172,11 @@ def target_diagram(x, y, pollutant: str = "PM2.5", *, u_ref: float | None = None
 
     if criteria is None:
         criteria = sensors._CRITERIA[pollutant.upper().replace(",", ".")]
-    fu = sensors.field_uncertainty(x, y, u_ref=sensors.DEFAULT_REFERENCE_UBS if u_ref is None else u_ref)
+    if u_ref is None:
+        u_ref = criteria.default_u_ref
+    if u_ref is None:
+        raise ValueError(f"give u_ref for {criteria.pollutant}, in {criteria.unit}")
+    fu = sensors.field_uncertainty(x, y, u_ref=u_ref)
     if ax is None:
         _, ax = plt.subplots(figsize=(5.2, 6.4), constrained_layout=True)
     _draw_target(ax, fu, np.asarray(x, dtype=float)[np.isfinite(np.asarray(x, dtype=float))], criteria)
@@ -208,5 +212,5 @@ def plot_target_grid(result):
             if j == 0:
                 ax.set_ylabel("Relative bias (%)")
     if lc is not None:
-        fig.colorbar(lc, ax=axes, shrink=0.6, pad=0.02, label="Reference concentration (µg/m³)")
+        fig.colorbar(lc, ax=axes, shrink=0.6, pad=0.02, label=f"Reference concentration ({crit.unit})")
     return fig

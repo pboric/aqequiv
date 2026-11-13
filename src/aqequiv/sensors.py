@@ -1,4 +1,8 @@
-"""Classification of PM sensor systems from field tests (CEN/TS 17660-2:2024)."""
+"""Classification of sensor systems from field tests.
+
+Particulate matter follows CEN/TS 17660-2:2024 (24-hour values); gases
+follow the field-test part of CEN/TS 17660-1:2021 (hourly values).
+"""
 
 from __future__ import annotations
 
@@ -33,8 +37,12 @@ class SensorCriteria:
     capture_min: tuple[float, float, float] = (0.90, 0.50, 0.0)
     rh_factor_max: tuple[float, float, float] = (1.5, 2.5, math.inf)
     min_sites: int = 2
-    min_days_per_site: int = 80  # two campaigns of at least 40 days
+    min_periods_per_site: int = 80  # two campaigns of at least 40 days
     min_sensors: int = 3
+    unit: str = "µg/m³"
+    period: str = "day"  # averaging period of the data: "day" or "hour"
+    default_u_ref: float | None = DEFAULT_REFERENCE_UBS
+    humidity_test: bool = True
 
 
 SENSOR_PM10 = SensorCriteria("PM10", 50.0, 35.0, 25.0, dqo=(25.0, 50.0, 100.0))
@@ -50,7 +58,34 @@ SENSOR_PM25 = SensorCriteria("PM2.5", 30.0, 21.0, 15.0, dqo=(15.0, 30.0, 60.0))
 SENSOR_PM10_2030 = SensorCriteria("PM10", 45.0, None, None, dqo=(22.5, 38.25, 90.0))
 SENSOR_PM25_2030 = SensorCriteria("PM2.5", 25.0, None, None, dqo=(8.8, 21.25, 50.0))
 
-_CRITERIA = {"PM10": SENSOR_PM10, "PM2.5": SENSOR_PM25, "PM25": SENSOR_PM25}
+
+def _gas(pollutant, lv, uat, lat, dqo, ubs, intercept, *, sites=2, unit="µg/m³"):
+    return SensorCriteria(
+        pollutant, lv, uat, lat, dqo=dqo, ubs_max=ubs, intercept_max=intercept,
+        capture_min=(0.90, 0.50, 0.0), rh_factor_max=(math.inf,) * 3,
+        min_sites=sites, min_periods_per_site=1920,  # two seasons of 40 days, hourly
+        unit=unit, period="hour", default_u_ref=None, humidity_test=False,
+    )
+
+
+#: Gases, evaluated on hourly values (CEN/TS 17660-1:2021, field tests).
+#: The reference uncertainty depends on the analyser, so there is no default.
+SENSOR_NO2 = _gas("NO2", 200.0, 140.0, 100.0, (50.0, 150.0, 400.0), (7.6, 15.0, 31.0), (9.8, 19.0, 33.0))
+SENSOR_NO = _gas("NO", 200.0, 140.0, 100.0, (50.0, 150.0, 400.0), (5.0, 10.0, 20.0), (6.4, 12.0, 22.0))
+SENSOR_O3 = _gas("O3", 120.0, 84.0, 60.0, (36.0, 90.0, 240.0), (8.0, 12.0, 24.0), (9.8, 19.0, 33.0))
+SENSOR_SO2 = _gas("SO2", 350.0, None, None, (88.0, 263.0, 700.0), (10.6, 21.0, 43.0), (1.4, 2.5, 4.5), sites=1)
+SENSOR_CO = _gas(
+    "CO", 10.0, 7.0, 5.0, (2.5, 7.5, 20.0), (0.058, 0.116, 0.232), (0.18, 0.25, 0.40), unit="mg/m³"
+)
+SENSOR_BENZENE = _gas(
+    "benzene", 5.0, 3.5, 2.0, (1.5, 5.0, 10.0), (1.3, 2.6, 5.2), (0.28, 0.58, 0.60), sites=1
+)
+
+_CRITERIA = {
+    "PM10": SENSOR_PM10, "PM2.5": SENSOR_PM25, "PM25": SENSOR_PM25,
+    "NO2": SENSOR_NO2, "NO": SENSOR_NO, "O3": SENSOR_O3, "SO2": SENSOR_SO2,
+    "CO": SENSOR_CO, "BENZENE": SENSOR_BENZENE,
+}
 
 
 def _rank_upper(value: float, limits) -> int:
@@ -290,11 +325,11 @@ class SensorClassification:
         cor = f"corrected, {self.correction}" if self.correction else "uncorrected"
         lines = [
             f"{c.pollutant} sensor system classification ({cor})",
-            f"Limit value {c.limit_value:g} µg/m³; maximum expanded uncertainty "
-            f"{' / '.join(f'{d:g}' for d in c.dqo)} µg/m³ for Class 1 / 2 / 3",
-            f"Reference between-sampler uncertainty {self.u_ref:.2f} µg/m³",
+            f"Limit value {c.limit_value:g} {c.unit}; maximum expanded uncertainty "
+            f"{' / '.join(f'{d:g}' for d in c.dqo)} {c.unit} for Class 1 / 2 / 3",
+            f"Reference between-sampler uncertainty {self.u_ref:.2f} {c.unit}",
             "",
-            "Field test, per site and sensor system (U = expanded uncertainty, µg/m³)",
+            f"Field test, per site and sensor system (U = expanded uncertainty, {c.unit})",
             _format(self.datasets),
             "",
             "Between-sensor-system uncertainty",
@@ -336,30 +371,34 @@ def evaluate_sensor(
     pollutant: str = "PM2.5",
     *,
     site: str | None = None,
-    u_ref: float = DEFAULT_REFERENCE_UBS,
+    u_ref: float | None = None,
     correction: str = "none",
     rh_factor=None,
     coarse: CoarseTest | None = None,
     lab_factor: float | None = None,
     criteria: SensorCriteria | None = None,
 ) -> SensorClassification:
-    """Classify a PM sensor system from co-location with the reference method.
+    """Classify a sensor system from co-location with the reference method.
 
     Parameters
     ----------
     data
-        One row per 24-hour period of the field test, both seasons together.
-        Days on which a sensor delivered no valid average are NaN.
+        One row per averaging period of the field test, both seasons
+        together: 24-hour values for PM, hourly values for gases. Periods
+        in which a sensor delivered no valid average are NaN.
     reference
         Column with the reference method results.
     sensors
         Columns with the replicate sensor systems (normally three).
     pollutant
-        ``"PM2.5"`` or ``"PM10"``.
+        ``"PM2.5"``, ``"PM10"``, ``"NO2"``, ``"NO"``, ``"O3"``, ``"SO2"``,
+        ``"CO"`` (in mg/m³) or ``"benzene"``.
     site
         Column naming the test site. Every site is evaluated separately.
     u_ref
-        Between-sampler standard uncertainty of the reference method, µg/m³.
+        Between-sampler standard uncertainty of the reference method, in the
+        unit of the data. Defaults to 0.67 µg/m³ for PM; for gases it depends
+        on the analyser and must be given.
     correction
         ``"none"``, ``"intercept"``, ``"slope"`` or ``"both"``. The correction
         is derived once from all sensor systems at all sites and applied to
@@ -378,7 +417,14 @@ def evaluate_sensor(
         try:
             criteria = _CRITERIA[pollutant.upper().replace(",", ".")]
         except KeyError:
-            raise ValueError(f"unknown pollutant {pollutant!r}; use 'PM10' or 'PM2.5'") from None
+            raise ValueError(f"unknown pollutant {pollutant!r}; choose from {sorted(_CRITERIA)}") from None
+    if u_ref is None:
+        u_ref = criteria.default_u_ref
+    if u_ref is None:
+        raise ValueError(
+            f"give u_ref, the between-instrument standard uncertainty of the {criteria.pollutant} "
+            f"reference analyser in {criteria.unit} (from its type-approval report)"
+        )
     if correction not in _CORRECTIONS:
         raise ValueError(f"correction must be one of {_CORRECTIONS}")
     cols = [sensors] if isinstance(sensors, str) else list(sensors)
@@ -456,9 +502,13 @@ def evaluate_sensor(
 
     # --- humidity, coarse fraction and laboratory tests ---------------------
     other = []
-    if rh_factor is None:
+    if not crit.humidity_test:
+        notes.append(
+            "field test only: the final class is the lowest of the pre-test, laboratory and field classes"
+        )
+    elif rh_factor is None:
         notes.append("humidity factor not given: Class 1 and Class 2 also require the humidity test")
-    else:
+    if crit.humidity_test and rh_factor is not None:
         per_site = rh_factor if isinstance(rh_factor, dict) else {"all sites": rh_factor}
         usable = {k: getattr(v, "factor", v) for k, v in per_site.items()}
         usable = {k: float(v) for k, v in usable.items() if not math.isnan(float(v))}
@@ -493,11 +543,11 @@ def evaluate_sensor(
                 table[c] = table[c].map(_label)
 
     # --- size of the field test ---------------------------------------------
-    fewest_days = int(min((sites == s).sum() for s in site_names))
+    fewest = int(min((sites == s).sum() for s in site_names))
     checks = [
         ("number of sensor systems", str(len(cols)), f">= {crit.min_sensors}", len(cols) >= crit.min_sensors),
         ("number of test sites", str(len(site_names)), f">= {crit.min_sites}", len(site_names) >= crit.min_sites),
-        ("fewest days at a site", str(fewest_days), f">= {crit.min_days_per_site}", fewest_days >= crit.min_days_per_site),
+        (f"fewest {crit.period}s at a site", str(fewest), f">= {crit.min_periods_per_site}", fewest >= crit.min_periods_per_site),
     ]
     dataset_checks = pd.DataFrame(checks, columns=["requirement", "value", "required", "passed"])
 
