@@ -43,6 +43,7 @@ p { margin:4px 0; }
 .tile { flex:1 1 220px; border-radius:8px; padding:12px 16px; background:var(--band); }
 .tile .k { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
 .tile .v { font-size:22px; font-weight:650; }
+.tile .n { font-size:13px; color:var(--muted); }
 .tile.good { background:var(--good-bg); } .tile.good .v { color:var(--good); }
 .tile.bad { background:var(--bad-bg); } .tile.bad .v { color:var(--bad); }
 .tile.warn { background:var(--warn-bg); } .tile.warn .v { color:var(--warn); }
@@ -60,17 +61,13 @@ footer { margin-top:40px; padding-top:12px; border-top:1px solid var(--line); co
 """
 
 
-def _number(value) -> str:
+def _number(value, decimals: int = 3) -> str:
     if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
-        if pd.isna(value):
-            return "–"
-        if value == int(value) and abs(value) >= 1000:
-            return f"{value:.0f}"
-        return f"{value:.3f}" if abs(value) < 10 else f"{value:.1f}"
+        return "–" if pd.isna(value) else f"{value:.{decimals}f}"
     return html.escape(str(value))
 
 
@@ -82,6 +79,9 @@ def _table(frame: pd.DataFrame) -> str:
         else f"<th>{_HEADERS.get(c, html.escape(str(c)))}</th>"
         for c in frame.columns
     )
+    from .pm import _decimals
+
+    decimals = {c: _decimals(frame[c]) for c in frame.columns if pd.api.types.is_float_dtype(frame[c])}
     rows = []
     for record in frame.itertuples(index=False):
         cells = []
@@ -93,7 +93,7 @@ def _table(frame: pd.DataFrame) -> str:
                 cells.append(f'<td class="t">{html.escape(str(value))}</td>')
             else:
                 value = value.item() if hasattr(value, "item") else value
-                cells.append(f"<td>{_number(value)}</td>")
+                cells.append(f"<td>{_number(value, decimals.get(column, 3))}</td>")
         rows.append("<tr>" + "".join(cells) + "</tr>")
     return f'<div class="scroll"><table><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
@@ -111,8 +111,12 @@ def _figure(fig, caption: str) -> str:
     )
 
 
-def _tile(label: str, value: str, state: str = "") -> str:
-    return f'<div class="tile {state}"><div class="k">{html.escape(label)}</div><div class="v">{html.escape(value)}</div></div>'
+def _tile(label: str, value: str, state: str = "", note: str = "") -> str:
+    note = f'<div class="n">{html.escape(note)}</div>' if note else ""
+    return (
+        f'<div class="tile {state}"><div class="k">{html.escape(label)}</div>'
+        f'<div class="v">{html.escape(value)}</div>{note}</div>'
+    )
 
 
 def _dataset_tile(suitable: bool) -> str:
@@ -180,7 +184,8 @@ def _sensor_parts(result):
             _tile(
                 "Result",
                 f"Class {cls}" if cls else "✗ not classified",
-                {1: "good", 2: "good", 3: "warn"}.get(cls, "bad"),
+                "warn" if result.provisional else {1: "good", 2: "good", 3: "warn"}.get(cls, "bad"),
+                f"provisional: {', '.join(result.pending)} not supplied" if result.provisional else "",
             ),
             _dataset_tile(result.dataset_suitable),
         ],

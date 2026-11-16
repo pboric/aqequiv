@@ -284,11 +284,12 @@ class Correction:
         )
 
     def __str__(self) -> str:
+        shift = f"y {'-' if self.intercept >= 0 else '+'} {abs(self.intercept):.3f}"
         if self.kind == "intercept":
-            return f"y_corr = y - {self.intercept:.3f}"
+            return f"y_corr = {shift}"
         if self.kind == "slope":
             return f"y_corr = y / {self.slope:.3f}"
-        return f"y_corr = (y - {self.intercept:.3f}) / {self.slope:.3f}"
+        return f"y_corr = ({shift}) / {self.slope:.3f}"
 
 
 # --- full evaluation ---------------------------------------------------------
@@ -307,12 +308,26 @@ class SensorClassification:
     correction: Correction | None
     rank: int
     notes: list[str] = field(default_factory=list)
+    pending: list[str] = field(default_factory=list)  # tests the class needs that were not supplied
     _points: dict = field(default_factory=dict, repr=False)
 
     @property
     def sensor_class(self) -> int | None:
         """1, 2 or 3; None if the sensor system meets no class."""
         return None if self.rank >= _NOT_CLASSIFIED else self.rank
+
+    @property
+    def provisional(self) -> bool:
+        """True if the class rests on tests that were not supplied."""
+        return bool(self.pending) and self.sensor_class is not None
+
+    @property
+    def verdict(self) -> str:
+        """The class in words, with the tests it still depends on."""
+        if self.sensor_class is None:
+            return "not classified"
+        text = _label(self.rank)
+        return f"{text} (provisional: {', '.join(self.pending)} not supplied)" if self.pending else text
 
     @property
     def dataset_suitable(self) -> bool:
@@ -340,10 +355,9 @@ class SensorClassification:
         lines += ["", "Dataset requirements", _format(self.dataset_checks)]
         if self.notes:
             lines += ["", "Notes"] + [f"- {n}" for n in self.notes]
-        verdict = _label(self.rank) if self.rank < _NOT_CLASSIFIED else "not classified"
         lines += [
             "",
-            f"Result: {verdict}",
+            f"Result: {self.verdict}",
             f"Dataset requirements: {'met' if self.dataset_suitable else 'NOT met'}",
         ]
         return "\n".join(lines)
@@ -543,6 +557,18 @@ def evaluate_sensor(
             rank = max(rank, r) if rank < _NOT_CLASSIFIED else rank
     other_tests = pd.DataFrame(other, columns=["test", "value", "best_class"])
 
+    # tests that the class reached so far still depends on
+    pending: list[str] = []
+    if not crit.humidity_test:
+        pending.append("pre-test and laboratory tests")
+    elif rank <= 2 and not any(o["test"].startswith("humidity") for o in other):
+        pending.append("humidity test")
+    if crit.pollutant == "PM10" and rank == 1:
+        if not any(o["test"].startswith("coarse fraction") for o in other):
+            pending.append("coarse fraction field test")
+        if lab_factor is None:
+            pending.append("laboratory coarse test")
+
     for table in (datasets, between, other_tests):
         for c in ("class", "best_class"):
             if c in table:
@@ -567,5 +593,6 @@ def evaluate_sensor(
         correction=cor,
         rank=rank,
         notes=notes,
+        pending=pending if rank < _NOT_CLASSIFIED else [],
         _points=points,
     )

@@ -172,11 +172,12 @@ class Calibration:
         return math.sqrt(var)
 
     def __str__(self) -> str:
+        shift = f"y {'-' if self.intercept >= 0 else '+'} {abs(self.intercept):.3f}"
         if self.kind == "intercept":
-            return f"y_cal = y - {self.intercept:.3f}"
+            return f"y_cal = {shift}"
         if self.kind == "slope":
             return f"y_cal = y / {self.slope:.3f}"
-        return f"y_cal = (y - {self.intercept:.3f}) / {self.slope:.3f}"
+        return f"y_cal = ({shift}) / {self.slope:.3f}"
 
 
 @dataclass
@@ -244,8 +245,19 @@ class PMEquivalence:
         return plot_equivalence(self, **kwargs)
 
 
+def _decimals(column: pd.Series) -> int:
+    """Decimals for a column of floats: three below 10, one from 10 upwards."""
+    largest = column.abs().max()
+    return 3 if pd.isna(largest) or largest < 10 else 1
+
+
 def _format(table: pd.DataFrame) -> str:
-    return table.to_string(index=False, float_format=lambda v: f"{v:.3f}" if abs(v) < 10 else f"{v:.1f}")
+    formatters = {
+        c: (lambda v, d=_decimals(table[c]): f"{v:.{d}f}")
+        for c in table.columns
+        if pd.api.types.is_float_dtype(table[c])
+    }
+    return table.to_string(index=False, formatters=formatters)
 
 
 def _as_list(columns) -> list[str]:

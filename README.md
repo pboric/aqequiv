@@ -146,6 +146,7 @@ result = aq.evaluate_sensor(
 
 print(result)            # full text report
 result.sensor_class      # 1, 2, 3 or None
+result.pending           # tests this class still needs, e.g. ["humidity test"]
 result.datasets          # slope, intercept, uncertainty and class per site and sensor
 result.between_sensor    # between-sensor-system uncertainty per site
 result.plot()            # one panel per site and sensor system
@@ -154,6 +155,11 @@ result.target_diagram()  # Modified Target Diagram per site and sensor system
 
 The class is the worst one over all sites, sensor systems and criteria. The
 `limited_by` column shows which criterion holds each dataset back.
+
+A class that rests on a test you did not supply is reported as provisional:
+Class 1 and Class 2 need the humidity test, and Class 1 for PM10 also needs
+the coarse fraction tests. The report then reads, for example,
+`Class 1 (provisional: humidity test not supplied)`.
 
 A single slope and/or intercept correction for all systems and sites can be
 applied with `correction="slope"`, `"intercept"` or `"both"`; its
@@ -228,7 +234,8 @@ single dataset, draws the diagram of Yatkin et al. (2022). It splits the
 relative expanded uncertainty into a random part (horizontal) and a bias
 part (vertical) along the range of reference concentrations. The distance of
 a point from the centre is the relative expanded uncertainty at that
-concentration, and the circles are the class limits. A curve that sits high
+concentration, and the circles are the class limits. Markers show the limit
+value and the assessment thresholds. A curve that sits high
 or low is dominated by bias, which a correction can remove; a curve far to
 the right is dominated by scatter, which it cannot.
 
@@ -315,7 +322,9 @@ constructed cases.
 
 **Equivalence.** The test suite reproduces the five worked examples in Annex F of the Guide
 (PM2.5 and PM10, before and after calibration) to the precision the Guide
-prints. The example data ship with the package.
+prints. The example data ship with the package. The regression and the
+uncertainty are also tested against the closed form of Deming regression,
+written independently of the package.
 
 Two things to know when comparing with the Guide:
 

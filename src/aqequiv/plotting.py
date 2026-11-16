@@ -94,12 +94,35 @@ def plot_sensor(result):
                 transform=ax.transAxes, va="top", fontsize=8,
             )
             ax.set(xlim=(0, top), ylim=(0, top), aspect="equal")
-            ax.set_title(f"{site} · {sensor}", fontsize=9)
+            ax.set_title(_panel_title(site, sensor, sites), fontsize=9)
             if i == len(sites) - 1:
                 ax.set_xlabel(f"Reference {crit.pollutant} ({crit.unit})")
             if j == 0:
                 ax.set_ylabel(f"Sensor{' corrected' if result.correction else ''} ({crit.unit})")
     return fig
+
+
+def _panel_title(site, sensor, sites) -> str:
+    """Title of a panel; the site is left out when the data had no site column."""
+    return str(sensor) if list(sites) == ["all"] else f"{site} · {sensor}"
+
+
+_MARKERS = {"LV": ("o", "0.1"), "UAT": ("o", "white"), "LAT": ("D", "white")}
+_MARKER_NAMES = {"LV": "limit value", "UAT": "upper assessment threshold", "LAT": "lower assessment threshold"}
+
+
+def _marker_legend(fig, crit):
+    """Explain the concentration markers below the panels."""
+    from matplotlib.lines import Line2D
+
+    levels = {"LV": crit.limit_value, "UAT": crit.upper_assessment_threshold, "LAT": crit.lower_assessment_threshold}
+    handles = [
+        Line2D([], [], ls="none", marker=_MARKERS[k][0], ms=6.5 if k != "LAT" else 5.5, mfc=_MARKERS[k][1],
+               mec="0.1", mew=1.2, label=f"{_MARKER_NAMES[k]}, {v:g} {crit.unit}")
+        for k, v in levels.items() if v is not None
+    ]
+    ncols = len(handles) if fig.get_figwidth() >= 8 else 1  # a narrow figure stacks the entries
+    fig.legend(handles=handles, loc="outside lower center", ncols=ncols, fontsize=8, frameon=False)
 
 
 def _draw_target(ax, fu, x, crit, *, colorbar=True):
@@ -143,13 +166,12 @@ def _draw_target(ax, fu, x, crit, *, colorbar=True):
     )
 
     marks = [("LV", lv), ("UAT", crit.upper_assessment_threshold), ("LAT", crit.lower_assessment_threshold)]
-    offsets = {"LV": (9, -12), "UAT": (11, -3), "LAT": (9, 7)}
     for label, level in marks:
         if level is None:
             continue
         mr, mb = (100 * float(v) for v in fu.relative_components(level))
-        ax.plot(mr, mb, "o", ms=6.5, mfc="white" if label != "LV" else "0.1", mec="0.1", mew=1.2, zorder=3)
-        ax.annotate(f"{label} {level:g}", (mr, mb), fontsize=7.5, xytext=offsets[label], textcoords="offset points")
+        shape, face = _MARKERS[label]
+        ax.plot(mr, mb, shape, ms=6.5 if label != "LAT" else 5.5, mfc=face, mec="0.1", mew=1.2, zorder=3)
 
     ax.set(xlim=(0, extent), ylim=(-extent, extent), aspect="equal")
     if colorbar:
@@ -178,11 +200,13 @@ def target_diagram(x, y, pollutant: str = "PM2.5", *, u_ref: float | None = None
         raise ValueError(f"give u_ref for {criteria.pollutant}, in {criteria.unit}")
     fu = sensors.field_uncertainty(x, y, u_ref=u_ref)
     if ax is None:
-        _, ax = plt.subplots(figsize=(5.2, 6.4), constrained_layout=True)
+        _, ax = plt.subplots(figsize=(5.2, 6.9), constrained_layout=True)
     _draw_target(ax, fu, np.asarray(x, dtype=float)[np.isfinite(np.asarray(x, dtype=float))], criteria)
     ax.set_xlabel("Relative random uncertainty (%)")
     ax.set_ylabel("Relative bias (%)")
     ax.set_title(f"{criteria.pollutant}: relative expanded uncertainty by concentration", fontsize=10)
+    if ax.figure.get_layout_engine() is not None and not ax.figure.legends:
+        _marker_legend(ax.figure, criteria)
     return ax.figure
 
 
@@ -206,11 +230,12 @@ def plot_target_grid(result):
                 continue
             x, _, fu, _, _ = result._points[(site, name)]
             lc = _draw_target(ax, fu, x, crit, colorbar=False)
-            ax.set_title(f"{site} · {name}", fontsize=9)
+            ax.set_title(_panel_title(site, name, sites), fontsize=9)
             if i == len(sites) - 1:
                 ax.set_xlabel("Relative random uncertainty (%)")
             if j == 0:
                 ax.set_ylabel("Relative bias (%)")
     if lc is not None:
         fig.colorbar(lc, ax=axes, shrink=0.6, pad=0.02, label=f"Reference concentration ({crit.unit})")
+        _marker_legend(fig, crit)
     return fig
