@@ -13,6 +13,7 @@ abstract: >-
 authors:
   - family-names: Borić
     given-names: Petar Krešimir
+doi: 10.5281/zenodo.24278513
 repository-code: "https://github.com/pboric/aqequiv"
 url: "https://github.com/pboric/aqequiv"
 license: MIT

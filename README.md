@@ -1,5 +1,7 @@
 # aqequiv
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24278513.svg)](https://doi.org/10.5281/zenodo.24278513)
+
 Equivalence testing and sensor classification for ambient air quality
 measurements, in Python.
 
@@ -413,7 +415,16 @@ git tag v0.6.1 && git push origin v0.6.1
 
 ## How to cite
 
-Citation details are in [CITATION.cff](CITATION.cff); on GitHub, use
+Every release is archived on Zenodo. The DOI
+[10.5281/zenodo.24278513](https://doi.org/10.5281/zenodo.24278513) always
+points to the latest version; the Zenodo page lists the DOI of each version,
+which is the one to cite for a specific calculation.
+
+> Borić, P. K. *aqequiv: equivalence testing and sensor classification for
+> ambient air quality measurements.* Zenodo.
+> https://doi.org/10.5281/zenodo.24278513
+
+The same details are in [CITATION.cff](CITATION.cff); on GitHub, use
 "Cite this repository" in the sidebar.
 
 ## Licence
