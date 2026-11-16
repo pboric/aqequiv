@@ -1,0 +1,70 @@
+name: Windows app
+
+# Builds aqequiv.exe, the desktop application for Windows.
+# Runs when a version tag is pushed (the .exe is attached to the release)
+# or when started by hand from the Actions tab (the .exe is a run artifact).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install ".[excel]" pyinstaller pytest
+
+      - name: Test on Windows
+        run: pytest -q
+
+      - name: Build aqequiv.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name aqequiv
+          --collect-data aqequiv
+          --hidden-import openpyxl
+          --hidden-import matplotlib.backends.backend_agg
+          packaging/aqequiv_app.py
+
+      - name: Check that the packed application works
+        shell: pwsh
+        run: |
+          $run = Start-Process -FilePath dist\aqequiv.exe -ArgumentList '--selftest', 'selftest.html' -Wait -PassThru
+          if ($run.ExitCode -ne 0) { throw "self-test exited with $($run.ExitCode)" }
+          if (-not (Select-String -Path selftest.html -Pattern 'PM2.5 equivalence test' -Quiet)) { throw "no report" }
+          if (-not (Select-String -Path selftest.html -Pattern 'Excel ok' -Quiet)) { throw "Excel files cannot be read" }
+          "{0:N0} MB" -f ((Get-Item dist\aqequiv.exe).Length / 1MB)
+
+      - name: Picture of the window
+        continue-on-error: true
+        run: python packaging/screenshot.py app.png
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: aqequiv-windows
+          path: |
+            dist/aqequiv.exe
+            selftest.html
+            app.png
+          if-no-files-found: warn
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:GITHUB_REF_NAME --title "aqequiv $env:GITHUB_REF_NAME" --notes "Windows application: download aqequiv.exe and double-click it. See docs/manual.md."
+          }
+          gh release upload $env:GITHUB_REF_NAME dist/aqequiv.exe --clobber

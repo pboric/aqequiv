@@ -243,6 +243,22 @@ Two options of the paper are not implemented: residuals fitted as a function
 of concentration, and adding the between-sensor uncertainty to the random
 part.
 
+## Desktop application
+
+![The application window](docs/app.png)
+
+For use without Python there is a desktop application: open a CSV or Excel
+file, pick the columns, press Evaluate, and open or save the report.
+
+- **Windows:** download `aqequiv.exe` from the
+  [Releases page](https://github.com/pboric/aqequiv/releases) and
+  double-click it. Nothing is installed and no data leave the computer.
+- **With Python:** `pip install "aqequiv[excel] @ git+https://github.com/pboric/aqequiv"`,
+  then run `aqequiv-app`.
+
+The [user manual](docs/manual.md) ([hrvatski](docs/upute.md)) explains how
+to prepare the data, what each option means and how to read the report.
+
 ## Command line and HTML report
 
 Installing the package also installs the `aqequiv` command, so the
@@ -320,6 +336,10 @@ printed regression results, to within the rounding of the printed slope.
 **EN 16450.** The standard has no worked example; its rules are tested on
 constructed cases.
 
+**Real data.** [What a year of real data showed](docs/case-study.md)
+describes a run on a full co-location study of three sensor units, where
+the package reproduced a separately written calculation.
+
 **Equivalence.** The test suite reproduces the five worked examples in Annex F of the Guide
 (PM2.5 and PM10, before and after calibration) to the precision the Guide
 prints. The example data ship with the package. The regression and the
@@ -362,6 +382,15 @@ uv sync
 uv run pytest
 uv run python examples/guide_example.py    # regenerates docs/example.png
 uv run python examples/sensor_example.py   # regenerates docs/target_diagram.png
+uv run aqequiv-app                         # the desktop application
+```
+
+The Windows application is built by `.github/workflows/windows-app.yml`
+with PyInstaller. It runs when a version tag is pushed and attaches
+`aqequiv.exe` to the release:
+
+```bash
+git tag v0.6.0 && git push origin v0.6.0
 ```
 
 ## References
