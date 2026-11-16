@@ -1,6 +1,6 @@
 [project]
 name = "aqequiv"
-version = "0.6.0"
+version = "0.6.1"
 description = "Equivalence testing and sensor classification for ambient air quality measurements"
 readme = "README.md"
 authors = [

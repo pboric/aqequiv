@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "aqequiv: equivalence testing and sensor classification for ambient air quality measurements"
+abstract: >-
+  Python package, command-line tool and desktop application for the
+  evaluation of parallel air quality measurements: equivalence of PM
+  instruments with the reference method (EC Guide to the Demonstration of
+  Equivalence, 2010; EN 16450:2017, including ongoing verification) and
+  classification of sensor systems for PM and gases (CEN/TS 17660-1 and -2),
+  with the Modified Target Diagram and the data quality objectives of
+  Directive (EU) 2024/2881.
+authors:
+  - family-names: Borić
+    given-names: Petar Krešimir
+repository-code: "https://github.com/pboric/aqequiv"
+url: "https://github.com/pboric/aqequiv"
+license: MIT
+keywords:
+  - air quality
+  - particulate matter
+  - equivalence
+  - low-cost sensors
+  - measurement uncertainty
+  - orthogonal regression
+  - CEN/TS 17660
+  - EN 16450

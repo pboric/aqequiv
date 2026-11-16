@@ -390,7 +390,7 @@ with PyInstaller. It runs when a version tag is pushed and attaches
 `aqequiv.exe` to the release:
 
 ```bash
-git tag v0.6.0 && git push origin v0.6.0
+git tag v0.6.1 && git push origin v0.6.1
 ```
 
 ## References
@@ -410,6 +410,11 @@ git tag v0.6.0 && git push origin v0.6.0
   Diagram to check compliance of low-cost sensors with the Data Quality
   Objectives of the European air quality directive. *Atmospheric
   Environment*, 273, 118967. https://doi.org/10.1016/j.atmosenv.2022.118967
+
+## How to cite
+
+Citation details are in [CITATION.cff](CITATION.cff); on GitHub, use
+"Cite this repository" in the sidebar.
 
 ## Licence
 
