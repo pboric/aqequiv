@@ -25,7 +25,7 @@ jobs:
         run: pip install ".[excel]" pyinstaller pytest
 
       - name: Test on Windows
-        run: pytest -q
+        run: pytest -q -rs
 
       - name: Build aqequiv.exe
         run: >
@@ -46,7 +46,10 @@ jobs:
 
       - name: Picture of the window
         continue-on-error: true
-        run: python packaging/screenshot.py app.png
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          python packaging/screenshot.py app.png
 
       - uses: actions/upload-artifact@v7
         with:
